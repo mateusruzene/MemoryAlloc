@@ -98,7 +98,7 @@ alocaBloco:
     syscall                       # Ajusta o tamanho da heap
     movq %r9, topoAtualHeap       # Atualiza o topo da heap
 
-.alocaNovoBloco:
+.alocaNovoBloco: # Ajustar esse ponto
     movq $1, (ultimoBloco)        # Marca o novo bloco como ocupado
     movq %rdi, 8(ultimoBloco)     # Salva o tamanho solicitado no cabeçalho do bloco
     movq ultimoBloco, %rax        # Configura o endereço do bloco alocado
@@ -147,3 +147,63 @@ liberaMem:
     ret
 
 imprimeMapa:
+    push %rbp                # Salva o ponteiro base
+    movq %rsp, %rbp          # Configura o ponteiro base
+    
+    movq topoInicialHeap, %r8   # Carrega o início da heap em r8
+    movq topoAtualHeap, %r9     # Carrega o topo atual da heap em r9
+
+.imprimeBloco:
+    cmpq %r8, %r9            # Verifica se atingimos o topo da heap
+    jge .fimImpressao        # Se sim, termina
+
+    # Imprime cabeçalho gerencial ("#")
+    movq $16, %rcx           # Cabeçalho tem 16 bytes
+    movb $'#', %al           # Prepara caractere "#"
+.gerencialLoop:
+    call imprimeChar         # Chama procedimento para imprimir caractere
+    addq $1, %r8             # Avança para o próximo byte
+    loop .gerencialLoop      # Continua até imprimir todos os 16 bytes
+
+    # Verifica se o bloco está livre ou ocupado
+    movq (%r8), %rax         # Lê o status do bloco
+    cmpq $0, %rax            # Verifica se o bloco está livre (0)
+    je .imprimeLivre         # Se livre, imprime "-"
+    jmp .imprimeOcupado      # Se ocupado, imprime "+"
+
+.imprimeLivre:
+    movb $'-', %al           # Prepara caractere "-"
+    jmp .imprimeConteudo
+
+.imprimeOcupado:
+    movb $'+', %al           # Prepara caractere "+"
+
+.imprimeConteudo:
+    movq 8(%r8), %rcx        # Lê o tamanho do bloco (em bytes)
+    addq $16, %r8            # Pula o cabeçalho
+.conteudoLoop:
+    call imprimeChar         # Imprime o caractere correspondente
+    addq $1, %r8             # Avança para o próximo byte
+    loop .conteudoLoop       # Continua até o final do bloco
+
+    jmp .imprimeBloco        # Vai para o próximo bloco
+
+.fimImpressao:
+    call imprimeNovaLinha    # Imprime uma nova linha para organização
+    pop %rbp                 # Restaura o ponteiro base
+    ret                      # Retorna
+
+imprimeChar:
+    # rdi deve conter o caractere a ser impresso
+    movq $1, %rdi            # File descriptor (stdout)
+    movq %rsp, %rsi          # Endereço do buffer
+    movb %al, (%rsi)         # Armazena o caractere em %al no buffer
+    movq $1, %rdx            # Tamanho do caractere (1 byte)
+    movq $1, %rax            # syscall write
+    syscall
+    ret
+
+imprimeNovaLinha:
+    movb $'\n', %al          # Prepara caractere de nova linha (usando movb para 8 bits)
+    call imprimeChar         # Chama procedimento para imprimir
+    ret
