@@ -22,6 +22,7 @@ iniciaAlocador:
     syscall
     movq %rax, topoAtualHeap  # Atribui o endereço de brk consultado em brk current
     movq %rax, topoInicialHeap # Atribui o endereço de brk consultado em brk original 
+    movq %rax, ultimoBloco # Atribui o endereço de brk cao ultimoBloco para saber que a heap está vazia
     ret
 
 finalizaAlocador:
@@ -34,16 +35,16 @@ finalizaAlocador:
 alocaMem:
     # Tamanho de alocacao solicitado esta em rdi
     movq topoInicialHeap, %r8 # Armazena o valor original de brk em r8
-    movq topoAtualHeap, %r9 # Armazena o valor atual de rbk em r9
+    movq topoAtualHeap, %r9 # Armazena o valor atual de brk em r9
     movq %rdi, %r10 # Salva o rdi(argumento)
     cmpq %r8, %r9 # Se current == brk ja estamos em um bloco vazio
     je alocaBloco 
 
-    movq %r8, %r11 # Armazena o valor original de rbk em r11
-    movq $0, %r14 # r14 sera responsavel por guardar o endereco
+    movq %r8, %r11 # Armazena o valor original de brk em r11
+    movq $0, %r14 # r14 sera responsavel por guardar o endereco onde o bloco sera alocado
     movq $0, %r15 # r15 sera responsavel por guardar o tamanho
 
-    .finding:
+.finding:
     cmpq $0, (%r11) # Verifica se o bloco esta vazio
     jne .proxBloco
 
@@ -56,12 +57,12 @@ alocaMem:
     cmpq 8(%r11), %r15 # Verifica se o bloco atual é menor do que o maior bloco encontrado
     jl .proxBloco
 
-    .aposEncontrar:
+.aposEncontrar:
     movq 8(%r11), %r15 # Salva o tamanho do bloco em r15
     movq %r11, %r14 # Salva o endereco do bloco em r14 
     jmp .proxBloco
 
-    .realocaBloco:
+.realocaBloco:
     movq $1, (%r14) # Indica que o bloco agora esta ocupado
     
     movq %r15, %r12 # r12 recebe o tamanho do bloco atual
@@ -74,30 +75,45 @@ alocaMem:
     ret
 
 alocaBloco:
-    addq $16, %r9 # Endereco a ser retornado
-    movq %r9, %r12 # salva o endereco
-    addq %rdi, %r9 # Adiciona o tamanho do bloco solicitado na posicao pos tags
+    # Devemos verificar o espaço entre ele e a heap, se o bloco solicitado (%rdi + 16) cabe ali
+    # Se couber, aloca e marca ele como o ultimoBloco
+    # Se não couber, achar um valor maior ou igual a (%rdi + 16) que seja um multiplo de 4096
+    # Depois deve aumentar o tamanho de brk para esse valor encontrado
+    # Depois alocar o valor de %rdi + 16 e aponta ele como o ultimoBloco
 
-    movq %r9, %rdi 
-    movq $12, %rax # Novo valor de brk
-    syscall
+    # Verificar espaço entre ultimoBloco e topoAtualHeap
+    movq topoAtualHeap, %r8       # Carrega o topo atual da heap
+    subq ultimoBloco, %r8         # Calcula o espaço livre após o último bloco
+    movq %rdi, %r9                # Copia o tamanho solicitado (%rdi) para %r9
+    addq $16, %r9                 # Adiciona o cabeçalho ao tamanho solicitado
+    cmpq %r9, %r8                 # Verifica se cabe no espaço livre
+    jge .alocaNovoBloco           # Se couber, pula para alocar o bloco
 
-    movq topoAtualHeap, %r8 # Endereco do novo bloco
-    movq $1, (%r8) # current brk recebe 1
-    movq %r10, 8(%r8) # currentbrk + 8 recebe o tamanho solicitado
-    movq %r9, topoAtualHeap # novo current brk apos o novo bloco
+    # Não coube, ajustar o tamanho da heap para o próximo múltiplo de 4096
+    addq $4095, %r9               # Ajusta para o próximo múltiplo de 4096
+    andq $-4096, %r9              # Garante alinhamento ao múltiplo de 4096
+    addq ultimoBloco, %r9         # Adiciona ao endereço atual do último bloco
+    movq %r9, %rdi                # Configura o novo valor de `brk` no registrador %rdi
+    movq $12, %rax                # Syscall de `brk`
+    syscall                       # Ajusta o tamanho da heap
+    movq %r9, topoAtualHeap       # Atualiza o topo da heap
 
-    movq %r12, %rax # retornar endereco do novo bloco
+.alocaNovoBloco: # Ajustar esse ponto
+    movq $1, (ultimoBloco)        # Marca o novo bloco como ocupado
+    movq %rdi, 8(ultimoBloco)     # Salva o tamanho solicitado no cabeçalho do bloco
+    movq ultimoBloco, %rax        # Configura o endereço do bloco alocado
+    addq $16, %rax                # Avança o cabeçalho para o ponteiro final
+    movq %rax, ultimoBloco        # Atualiza o último bloco
     ret
 
 .proxBloco:
     addq 8(%r11), %r11 # Adiciona qual for o tamanho do bloco ocupado no endereco que estamos (vai ate o fim do bloco - 16)
     addq $16, %r11  # Pula os 16 bits restantes
 
-    cmpq %r9, %r11 # Verifica se ainda estamos dentro da Heap
-    jl .finding
+    cmpq ultimoBloco, %r11 # Verifica se passamos o último bloco
+    jle .finding           # Se ainda não passamos, continua procurando
 
-    cmpq $0, %r14 # se r14 == 0, podemos alocar um bloco
+    cmpq $0, %r14 # se r14 == 0, ou seja, não encontrou nenhum bloco, podemos alocar um bloco
     je alocaBloco
 
     jmp .realocaBloco
@@ -117,18 +133,77 @@ alocaBloco:
     ret
 
 liberaMem:
-  movq topoInicialHeap, %r8 # Armazena o valor original de brk em rbx
-  movq topoAtualHeap, %r9 # Armazena o valor atual de brk em rcx
-  cmpq %rdi, %r8 
-  jg .alloc_fail
-  cmpq %rdi, %r9
-  jl .alloc_fail
-  movq $0, -16(%rdi) # Define o bit de marcacao como livre
-  ret
+    movq topoInicialHeap, %r8 # Armazena o valor original de brk em rbx
+    movq topoAtualHeap, %r9 # Armazena o valor atual de brk em rcx
+    cmpq %rdi, %r8 
+    jg .alloc_fail
+    cmpq %rdi, %r9
+    jl .alloc_fail
+    movq $0, -16(%rdi) # Define o bit de marcacao como livre
+    ret
 
 .alloc_fail:
-  movq $0, %rax
-  ret
+    movq $0, %rax
+    ret
 
 imprimeMapa:
-    cu de galinha # Cu de galinha
+    push %rbp                # Salva o ponteiro base
+    movq %rsp, %rbp          # Configura o ponteiro base
+    
+    movq topoInicialHeap, %r8   # Carrega o início da heap em r8
+    movq topoAtualHeap, %r9     # Carrega o topo atual da heap em r9
+
+.imprimeBloco:
+    cmpq %r8, %r9            # Verifica se atingimos o topo da heap
+    jge .fimImpressao        # Se sim, termina
+
+    # Imprime cabeçalho gerencial ("#")
+    movq $16, %rcx           # Cabeçalho tem 16 bytes
+    movb $'#', %al           # Prepara caractere "#"
+.gerencialLoop:
+    call imprimeChar         # Chama procedimento para imprimir caractere
+    addq $1, %r8             # Avança para o próximo byte
+    loop .gerencialLoop      # Continua até imprimir todos os 16 bytes
+
+    # Verifica se o bloco está livre ou ocupado
+    movq (%r8), %rax         # Lê o status do bloco
+    cmpq $0, %rax            # Verifica se o bloco está livre (0)
+    je .imprimeLivre         # Se livre, imprime "-"
+    jmp .imprimeOcupado      # Se ocupado, imprime "+"
+
+.imprimeLivre:
+    movb $'-', %al           # Prepara caractere "-"
+    jmp .imprimeConteudo
+
+.imprimeOcupado:
+    movb $'+', %al           # Prepara caractere "+"
+
+.imprimeConteudo:
+    movq 8(%r8), %rcx        # Lê o tamanho do bloco (em bytes)
+    addq $16, %r8            # Pula o cabeçalho
+.conteudoLoop:
+    call imprimeChar         # Imprime o caractere correspondente
+    addq $1, %r8             # Avança para o próximo byte
+    loop .conteudoLoop       # Continua até o final do bloco
+
+    jmp .imprimeBloco        # Vai para o próximo bloco
+
+.fimImpressao:
+    call imprimeNovaLinha    # Imprime uma nova linha para organização
+    pop %rbp                 # Restaura o ponteiro base
+    ret                      # Retorna
+
+imprimeChar:
+    # rdi deve conter o caractere a ser impresso
+    movq $1, %rdi            # File descriptor (stdout)
+    movq %rsp, %rsi          # Endereço do buffer
+    movb %al, (%rsi)         # Armazena o caractere em %al no buffer
+    movq $1, %rdx            # Tamanho do caractere (1 byte)
+    movq $1, %rax            # syscall write
+    syscall
+    ret
+
+imprimeNovaLinha:
+    movb $'\n', %al          # Prepara caractere de nova linha (usando movb para 8 bits)
+    call imprimeChar         # Chama procedimento para imprimir
+    ret
