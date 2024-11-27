@@ -2,6 +2,9 @@
 topoInicialHeap: .quad 0
 topoAtualHeap: .quad 0
 ultimoBloco: .quad 0
+strCabecalho: .string "################"
+strOcupado: .string "*"
+strDesocupado: .string "-"
 
 .section .text
 
@@ -153,63 +156,50 @@ liberaMem:
     ret
 
 imprimeMapa:
-    push %rbp                # Salva o ponteiro base
-    movq %rsp, %rbp          # Configura o ponteiro base
-    
-    movq topoInicialHeap, %r8   # Carrega o início da heap em r8
-    movq topoAtualHeap, %r9     # Carrega o topo atual da heap em r9
+    # Verifica se a heap está vazia
+    movq topoInicialHeap, %r8 # Armazena o valor original de brk em r8
+    movq topoAtualHeap, %r9 # Armazena o valor atual de brk em r9
+    cmpq %r8, %r9 # Compara se a heap está vazia
+    je .fimMapa
 
-.imprimeBloco:
-    cmpq %r8, %r9            # Verifica se atingimos o topo da heap
-    jge .fimImpressao        # Se sim, termina
+    # Imprime o cabeçalho do início do bloco (qualquer bloco)
+.inicioDoBloco:
+    mov $strCabecalho, %rdi
+    call printf
 
-    # Imprime cabeçalho gerencial ("#")
-    movq $16, %rcx           # Cabeçalho tem 16 bytes
-    movb $'#', %al           # Prepara caractere "#"
-.gerencialLoop:
-    call imprimeChar         # Chama procedimento para imprimir caractere
-    addq $1, %r8             # Avança para o próximo byte
-    loop .gerencialLoop      # Continua até imprimir todos os 16 bytes
+    # Continua a imprimir o resto do bloco
+.continuaImprimir:
+    movq 8(%r8), %r15 # Quantidade de vezes que deve imprimir o caractere (tamanho do bloco)
+    movq $1, %r14 # Inicia o i do loop (vai ser usado nos dois imprimeOcupado/Desocupado)
+    cmpq $0, (%r8) # Verifica se o bloco e desocupado
+    je .imprimeDesocupado
 
-    # Verifica se o bloco está livre ou ocupado
-    movq (%r8), %rax         # Lê o status do bloco
-    cmpq $0, %rax            # Verifica se o bloco está livre (0)
-    je .imprimeLivre         # Se livre, imprime "-"
-    jmp .imprimeOcupado      # Se ocupado, imprime "+"
+    jmp .imprimeOcupado
 
-.imprimeLivre:
-    movb $'-', %al           # Prepara caractere "-"
-    jmp .imprimeConteudo
+.contunuaProxBloco:
+    addq 8(%r8), %r8 # Adiciona qual for o tamanho do bloco ocupado no endereco que estamos (vai ate o fim do bloco - 16)
+    addq $16, %r8  # Pula os 16 bits restantes
+
+    cmpq ultimoBloco, %r8 # Verifica se passamos o último bloco
+    jle .inicioDoBloco     # Se ainda não passamos, continua procurando
+
+    jmp .fimMapa
 
 .imprimeOcupado:
-    movb $'+', %al           # Prepara caractere "+"
+    mov $strOcupado, %rdi
+    call printf
+    cmpq %r15, %r14
+    je .contunuaProxBloco
+    addq $1, %r14
+    jmp .imprimeOcupado
 
-.imprimeConteudo:
-    movq 8(%r8), %rcx        # Lê o tamanho do bloco (em bytes)
-    addq $16, %r8            # Pula o cabeçalho
-.conteudoLoop:
-    call imprimeChar         # Imprime o caractere correspondente
-    addq $1, %r8             # Avança para o próximo byte
-    loop .conteudoLoop       # Continua até o final do bloco
+.imprimeDesocupado:   
+    mov $strDesocupado, %rdi
+    call printf
+    cmpq %r15, %r14
+    je .contunuaProxBloco
+    addq $1, %r14
+    jmp .imprimeOcupado
 
-    jmp .imprimeBloco        # Vai para o próximo bloco
-
-.fimImpressao:
-    call imprimeNovaLinha    # Imprime uma nova linha para organização
-    pop %rbp                 # Restaura o ponteiro base
-    ret                      # Retorna
-
-imprimeChar:
-    # rdi deve conter o caractere a ser impresso
-    movq $1, %rdi            # File descriptor (stdout)
-    movq %rsp, %rsi          # Endereço do buffer
-    movb %al, (%rsi)         # Armazena o caractere em %al no buffer
-    movq $1, %rdx            # Tamanho do caractere (1 byte)
-    movq $1, %rax            # syscall write
-    syscall
-    ret
-
-imprimeNovaLinha:
-    movb $'\n', %al          # Prepara caractere de nova linha (usando movb para 8 bits)
-    call imprimeChar         # Chama procedimento para imprimir
+.fimMapa:
     ret
