@@ -14,6 +14,7 @@ ultimoBloco: .quad 0
 .global alocaMem
 .global liberaMem
 .global imprimeMapa
+.global aumentaHeap
 
 iniciaAlocador:
     movq $0, topoInicialHeap # Atribui 0 ao brk original
@@ -45,7 +46,7 @@ alocaMem:
     movq $0, %r15 # r15 sera responsavel por guardar o tamanho
 
 .finding:
-    cmpq $0, (%r11) # Verifica se o bloco esta vazio
+    cmpq $0, (%r11) # Verifica se o bloco e desocupado
     jne .proxBloco
 
     cmpq 8(%r11), %rdi # Verifica se o bloco atual é maior ou igual o tamanho solicitado
@@ -75,35 +76,24 @@ alocaMem:
     ret
 
 alocaBloco:
-    # Devemos verificar o espaço entre ele e a heap, se o bloco solicitado (%rdi + 16) cabe ali
-    # Se couber, aloca e marca ele como o ultimoBloco
-    # Se não couber, achar um valor maior ou igual a (%rdi + 16) que seja um multiplo de 4096
-    # Depois deve aumentar o tamanho de brk para esse valor encontrado
-    # Depois alocar o valor de %rdi + 16 e aponta ele como o ultimoBloco
+    movq ultimoBloco, %r9 # Armazena o valor atual de brk em r9
+    addq $16, %r9 # Endereco a ser retornado
+    movq %r9, %r12 # salva o endereco
+    addq %rdi, %r9 # Adiciona o tamanho do bloco solicitado na posicao pos tags
 
-    # Verificar espaço entre ultimoBloco e topoAtualHeap
-    movq topoAtualHeap, %r8       # Carrega o topo atual da heap
-    subq ultimoBloco, %r8         # Calcula o espaço livre após o último bloco
-    movq %rdi, %r9                # Copia o tamanho solicitado (%rdi) para %r9
-    addq $16, %r9                 # Adiciona o cabeçalho ao tamanho solicitado
-    cmpq %r9, %r8                 # Verifica se cabe no espaço livre
-    jge .alocaNovoBloco           # Se couber, pula para alocar o bloco
+    # Verifica espaço na heap
+    movq topoAtualHeap, %r15 # Carrega o topo atual da heap
+    subq ultimoBloco, %r15 # Calcula o espaço livre após o último bloco
+    cmpq %r9, %r15 # Verifica se cabe no espaço livre
+    jl aumentaHeap # Se não couber, pula para aumentar a heap
 
-    # Não coube, ajustar o tamanho da heap para o próximo múltiplo de 4096
-    addq $4095, %r9               # Ajusta para o próximo múltiplo de 4096
-    andq $-4096, %r9              # Garante alinhamento ao múltiplo de 4096
-    addq ultimoBloco, %r9         # Adiciona ao endereço atual do último bloco
-    movq %r9, %rdi                # Configura o novo valor de `brk` no registrador %rdi
-    movq $12, %rax                # Syscall de `brk`
-    syscall                       # Ajusta o tamanho da heap
-    movq %r9, topoAtualHeap       # Atualiza o topo da heap
+.continuaAlocacao:
+    movq ultimoBloco, %r8 # Endereco do novo bloco
+    movq $1, (%r8) # current brk recebe 1
+    movq %r10, 8(%r8) # currentbrk + 8 recebe o tamanho solicitado
+    movq %r9, ultimoBloco # novo current brk apos o novo bloco
 
-.alocaNovoBloco: # Ajustar esse ponto
-    movq $1, (ultimoBloco)        # Marca o novo bloco como ocupado
-    movq %rdi, 8(ultimoBloco)     # Salva o tamanho solicitado no cabeçalho do bloco
-    movq ultimoBloco, %rax        # Configura o endereço do bloco alocado
-    addq $16, %rax                # Avança o cabeçalho para o ponteiro final
-    movq %rax, ultimoBloco        # Atualiza o último bloco
+    movq %r12, %rax # retornar endereco do novo bloco
     ret
 
 .proxBloco:
@@ -131,6 +121,22 @@ alocaBloco:
 
     movq %r13, %rax
     ret
+
+aumentaHeap:
+    # %r9 <= %r15 + i * 4096
+    movq $1, %r14 # i do loop
+    movq %r15, %r13 # soma dos valores
+.loop:
+    addq $4096, %r13 
+    cmpq %r13, %r9 # Compara se o valor pedido é maior que o multiplo de 4096 para aumentar a heap
+    jg .loop
+
+    subq %r15, %r13 # remove a diferença do espaço vazio
+    movq %r13, %rdi # passa o valor que vai ser adicionado no brk
+    movq $12, %rax # Novo valor de brk
+    syscall
+
+    jmp .continuaAlocacao 
 
 liberaMem:
     movq topoInicialHeap, %r8 # Armazena o valor original de brk em rbx
