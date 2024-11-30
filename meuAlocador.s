@@ -1,10 +1,11 @@
 .section .data
-topoInicialHeap: .quad 0
-topoAtualHeap: .quad 0
-ultimoBloco: .quad 0
-strCabecalho: .string "################"
-strOcupado: .string "*"
-strDesocupado: .string "-"
+    topoInicialHeap: .quad 0
+    topoAtualHeap: .quad 0
+    ultimoBloco: .quad 0
+    strCabecalho: .string "################"
+    strOcupado: .string "*"
+    strDesocupado: .string "-"
+    strFim: .string "\n"
 
 .section .text
 
@@ -34,6 +35,7 @@ finalizaAlocador:
     movq $12, %rax # syscall de brk
     syscall
     movq %rdi, topoAtualHeap # Atribui rdi ao brk original
+    movq %rdi, ultimoBloco # Atribui rdi ao brk original
     ret
 
 alocaMem:
@@ -104,7 +106,7 @@ alocaBloco:
     addq $16, %r11  # Pula os 16 bits restantes
 
     cmpq ultimoBloco, %r11 # Verifica se passamos o último bloco
-    jle .finding           # Se ainda não passamos, continua procurando
+    jl .finding           # Se ainda não passamos, continua procurando
 
     cmpq $0, %r14 # se r14 == 0, ou seja, não encontrou nenhum bloco, podemos alocar um bloco
     je alocaBloco
@@ -139,11 +141,12 @@ aumentaHeap:
     movq $12, %rax # Novo valor de brk
     syscall
 
+    addq %r13, topoAtualHeap # novo topo de brk
     jmp .continuaAlocacao 
 
 liberaMem:
     movq topoInicialHeap, %r8 # Armazena o valor original de brk em rbx
-    movq topoAtualHeap, %r9 # Armazena o valor atual de brk em rcx
+    movq ultimoBloco, %r9 # Armazena o valor atual de brk em r9
     cmpq %rdi, %r8 
     jg .alloc_fail
     cmpq %rdi, %r9
@@ -155,18 +158,55 @@ liberaMem:
     movq $0, %rax
     ret
 
+
+
+# imprimeMapa:
+#    pushq %rbp            # Salva o valor original de %rbp
+#    movq %rsp, %rbp       # Configura o novo frame base
+#    subq $16, %rsp        # Reserva 16 bytes na pilha
+#
+#    mov $strCabecalho, %rdi       # Configura o argumento para printf
+#    call printf           # Chama printf
+#
+#    movq %rbp, %rax       # Calcula o endereço baseado em %rbp
+#    subq $16, %rax        # Ajusta o valor
+#    mov $strCabecalho, %rdi       # Configura o próximo argumento para printf
+#    call printf           # Chama printf
+#
+#    movq %rbp, %rax       # Calcula o endereço baseado em %rbp
+#    subq $16, %rax        # Ajusta o valor
+#    mov $strOcupado, %rdi       # Configura o próximo argumento para printf
+#    call printf           # Chama printf
+#
+#    movq %rbp, %rax       # Calcula o endereço baseado em %rbp
+#    subq $16, %rax        # Ajusta o valor
+#    mov $strOcupado, %rdi       # Configura o próximo argumento para printf
+#    call printf           # Chama printf
+#
+#    movq %rbp, %rax       # Calcula o endereço baseado em %rbp
+#    subq $16, %rax        # Ajusta o valor
+#    mov $str3, %rdi       # Configura o próximo argumento para printf
+#    call printf           # Chama printf
+#
+#    addq $16, %rsp        # Restaura o ponteiro da pilha
+#    popq %rbp             # Restaura o valor original de %rbp
+#    ret                   # Retorna da função
+
 imprimeMapa:
+    pushq %rbp            # Salva o valor original de %rbp
+    movq %rsp, %rbp       # Configura o novo frame base
+    subq $16, %rsp        # Reserva 16 bytes na pilha
+
     # Verifica se a heap está vazia
     movq topoInicialHeap, %r8 # Armazena o valor original de brk em r8
     movq topoAtualHeap, %r9 # Armazena o valor atual de brk em r9
     cmpq %r8, %r9 # Compara se a heap está vazia
-    je .fimMapa
+    jle .fim
 
     # Imprime o cabeçalho do início do bloco (qualquer bloco)
 .inicioDoBloco:
     mov $strCabecalho, %rdi
     call printf
-
     # Continua a imprimir o resto do bloco
 .continuaImprimir:
     movq 8(%r8), %r15 # Quantidade de vezes que deve imprimir o caractere (tamanho do bloco)
@@ -181,11 +221,13 @@ imprimeMapa:
     addq $16, %r8  # Pula os 16 bits restantes
 
     cmpq ultimoBloco, %r8 # Verifica se passamos o último bloco
-    jle .inicioDoBloco     # Se ainda não passamos, continua procurando
+    jl .inicioDoBloco     # Se ainda não passamos, continua procurando
 
     jmp .fimMapa
 
 .imprimeOcupado:
+    movq %rbp, %rax       # Calcula o endereço baseado em %rbp
+    subq $16, %rax        # Ajusta o valor
     mov $strOcupado, %rdi
     call printf
     cmpq %r15, %r14
@@ -194,12 +236,22 @@ imprimeMapa:
     jmp .imprimeOcupado
 
 .imprimeDesocupado:   
+    movq %rbp, %rax       # Calcula o endereço baseado em %rbp
+    subq $16, %rax        # Ajusta o valor
     mov $strDesocupado, %rdi
     call printf
     cmpq %r15, %r14
     je .contunuaProxBloco
     addq $1, %r14
-    jmp .imprimeOcupado
+    jmp .imprimeDesocupado
 
 .fimMapa:
+    movq %rbp, %rax       
+    subq $16, %rax
+    mov $strFim, %rdi # Imprime uma quebra de linha no final da heap
+    call printf
+
+.fim:
+    addq $16, %rsp        # Restaura o ponteiro da pilha
+    popq %rbp             # Restaura o valor original de %rbp
     ret
