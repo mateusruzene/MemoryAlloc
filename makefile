@@ -1,10 +1,9 @@
 CC = gcc
 AS = as
 CFLAGS = -g -no-pie
-LFLAGS = -lm
 
 main: main.o meuAlocador.o
-	$(CC) $(CFLAGS) $(LFLAGS) -o main main.o meuAlocador.o
+	$(CC) $(CFLAGS) -o main main.o meuAlocador.o
 
 meuAlocador.o: meuAlocador.s 
 	$(AS) $(CFLAGS) -c meuAlocador.s -o meuAlocador.o
