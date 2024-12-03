@@ -4,7 +4,6 @@
 int main(long int argc, char **argv)
 {
 	void *a, *b;
-	int testeA, testeB;
 
 	printf("Inicio do Programa\n");
 	iniciaAlocador(); // Impressão esperada
@@ -16,12 +15,12 @@ int main(long int argc, char **argv)
 
 	imprimeMapa(); // ################**********##############****
 
-	testeA = liberaMem(a);
-	imprimeMapa();				 // ################----------##############****
-	testeB = liberaMem(b); // ################----------------------------
-												 // ou
-												 // <vazio>
-	imprimeMapa();				 // ################----------##############----
+	liberaMem(a);
+	imprimeMapa(); // ################----------##############****
+	liberaMem(b);	 // ################----------------------------
+								 // ou
+								 // <vazio>
+	imprimeMapa(); // ################----------##############----
 
 	finalizaAlocador();
 	printf("Fim do Programa \n");

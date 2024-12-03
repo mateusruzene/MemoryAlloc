@@ -61,7 +61,7 @@ alocaMem:
     je .aposEncontrar
 
     cmpq 8(%r11), %r15 # Verifica se o bloco atual é menor do que o maior bloco encontrado
-    jl .proxBloco
+    jg .proxBloco
 
 .aposEncontrar:
     movq 8(%r11), %r15 # Salva o tamanho do bloco em r15
